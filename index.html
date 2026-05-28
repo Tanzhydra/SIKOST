@@ -72,7 +72,7 @@ html,body{height:100%;margin:0;background:#f8fafc;}
 .kamar-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.07);transform:translateY(-2px);}
 .kamar-card.terisi{border-top:3px solid #f59e0b;}.kamar-card.kosong{border-top:3px solid #16a34a;}
 .bukti-preview{width:100%;max-height:220px;object-fit:cover;border-radius:10px;border:1px solid #f1f5f9;}
-.lang-btn{display:inline-flex;align-items:center;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;margin-left:14px;}
+.lang-btn{display:inline-flex;align-items:center;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;}
 .lang-btn button{padding:4px 10px;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:all .15s;background:#fff;color:#94a3b8;}
 .lang-btn button.active{background:#16a34a;color:#fff;}
 .cat-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:99px;font-size:11.5px;font-weight:700;}
@@ -94,17 +94,13 @@ html,body{height:100%;margin:0;background:#f8fafc;}
 // KONFIGURASI SUPABASE
 // ============================================================
 const SUPABASE_URL      = 'https://lfdvgijkqbhfmvcmbhvh.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmZHZnaWprcWJoZm12Y21iaHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0ODk5ODksImV4cCI6MjA5NTA2NTk4OX0.vY3MTVB_2rorlkZFm5taPivmJwoL_15w807jlEE20eQ'; // (Biarkan punya kamu)
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmZHZnaWprcWJoZm12Y21iaHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0ODk5ODksImV4cCI6MjA5NTA2NTk4OX0.vY3MTVB_2rorlkZFm5taPivmJwoL_15w807jlEE20eQ';
 
-// TAMBAHKAN KUNCI SERVICE ROLE DI SINI (Ganti dengan kunci asli dari dashboard)
+// KUNCI SERVICE ROLE UNTUK AUTO-CREATE AUTH PENYEWA
 const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmZHZnaWprcWJoZm12Y21iaHZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTQ4OTk4OSwiZXhwIjoyMDk1MDY1OTg5fQ.L4m5cbhN4BkD1il4BfiQBwzwAE3fnSM0WUsd3Hw4aIw';
 
 const { createClient } = supabase;
-
-// Client biasa untuk operasi standar
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Client KHUSUS ADMIN untuk bypass pembuatan Auth tanpa merusak sesi login sekarang
 const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
@@ -347,7 +343,7 @@ async function doTambahPenyewa(){
   try{
     const nama=document.getElementById('tp-nama')?.value?.trim();
     const email=document.getElementById('tp-email')?.value?.trim();
-    const pass=document.getElementById('tp-pass')?.value?.trim(); // Ambil password
+    const pass=document.getElementById('tp-pass')?.value?.trim();
     const telepon=document.getElementById('tp-telepon')?.value?.trim();
     const id_kamar=document.getElementById('tp-kamar')?.value;
     const tgl_masuk=document.getElementById('tp-masuk')?.value;
@@ -356,31 +352,24 @@ async function doTambahPenyewa(){
     if(!nama||!email||!pass||!id_kamar||!tgl_masuk||!jatuh_tempo) throw new Error('Semua field yang dibintangi (*) wajib diisi!');
     if(pass.length < 6) throw new Error('Password minimal 6 karakter!');
 
-    // 1. BIKIN AKUN AUTH MENGGUNAKAN sbAdmin
     const { data: authData, error: authErr } = await sbAdmin.auth.admin.createUser({
-      email: email,
-      password: pass,
-      email_confirm: true // Langsung aktif tanpa butuh verifikasi email
+      email: email, password: pass, email_confirm: true
     });
     if(authErr) throw authErr;
 
-    // 2. UPLOAD KTP (Jika ada)
     let foto_ktp=null;
     if(S.ktpFile) foto_ktp = await uploadFile(S.ktpFile,'ktp') || S.ktpFile.name;
     
-    // 3. INSERT KE TABEL PENYEWAS
     const {error:pe}=await sb.from('penyewas').insert([{id_kamar,nama,email,telepon,tgl_masuk,jatuh_tempo,foto_ktp,status:'aktif'}]);
     if(pe) throw pe;
     
-    // 4. INSERT KE TABEL USERS (Untuk mendefinisikan Role)
     const {data:ex}=await sb.from('users').select('id').eq('email',email).single();
     if(!ex) await sb.from('users').insert([{email,role:'penyewa'}]);
     
-    // 5. UPDATE STATUS KAMAR
     await sb.from('kamars').update({status:'terisi'}).eq('id',id_kamar);
     
     await fetchAll(); closeModal(); S.ktpFile=null;
-    toast(`Penyewa ${nama} berhasil ditambahkan & akun siap digunakan!`,'✅');
+    toast(`Penyewa ${nama} berhasil ditambahkan!`,'✅');
   }catch(e){
     toast('Gagal: '+e.message,'❌');
   }finally{
@@ -482,6 +471,57 @@ async function doSelesaiKerusakan(id){
   }catch(e){toast('Error: '+e.message,'❌');}
 }
 
+async function doHapusKamar(id, status){
+  if(status === 'terisi') { toast('Kamar sedang terisi! Hapus penyewa terlebih dahulu.','⚠️'); return; }
+  if(!confirm('Yakin ingin menghapus kamar ini?')) return;
+  setLoad(true);
+  try{
+    const {error} = await sb.from('kamars').delete().eq('id', id);
+    if(error) throw error;
+    await fetchKamars(); render(); toast('Kamar dihapus!','🗑️');
+  }catch(e){toast('Error: '+e.message,'❌');} finally{setLoad(false);}
+}
+
+async function doHapusPenyewa(id, id_kamar){
+  if(!confirm('Yakin ingin menghapus penyewa ini? Semua data terkait juga akan terhapus.')) return;
+  setLoad(true);
+  try{
+    const py = S.penyewas.find(p=>p.id===id);
+    const {error} = await sb.from('penyewas').delete().eq('id', id);
+    if(error) throw error;
+    if(id_kamar) await sb.from('kamars').update({status:'kosong'}).eq('id', id_kamar);
+    if(py && py.email) await sb.from('users').delete().eq('email', py.email);
+    await fetchAll(); render(); toast('Penyewa dihapus!','🗑️');
+  }catch(e){toast('Error: '+e.message,'❌');} finally{setLoad(false);}
+}
+
+async function doHapusPengeluaran(id){
+  if(!confirm('Hapus data pengeluaran/nota ini?')) return;
+  try{
+    const {error} = await sb.from('pengeluarans').delete().eq('id', id);
+    if(error) throw error;
+    await fetchPengeluarans(); render(); toast('Pengeluaran dihapus','🗑️');
+  }catch(e){toast('Error: '+e.message,'❌');}
+}
+
+async function doHapusAset(id){
+  if(!confirm('Hapus data aset ini?')) return;
+  try{
+    const {error} = await sb.from('asets').delete().eq('id', id);
+    if(error) throw error;
+    await fetchAsets(); render(); toast('Aset dihapus','🗑️');
+  }catch(e){toast('Error: '+e.message,'❌');}
+}
+
+async function doHapusArsip(id){
+  if(!confirm('Hapus arsip dokumen/foto ini?')) return;
+  try{
+    const {error} = await sb.from('arsip_foto').delete().eq('id', id);
+    if(error) throw error;
+    await fetchArsip(); render(); toast('Arsip dihapus','🗑️');
+  }catch(e){toast('Error: '+e.message,'❌');}
+}
+
 async function doTambahAset(){
   setLoad(true);
   try {
@@ -566,7 +606,7 @@ function render(){
     </div>
     ${renderModals()}
   `;
-  initCharts(); // Memanggil render chart jika ada
+  initCharts();
 }
 
 // ============================================================
@@ -771,7 +811,10 @@ function pgKamar(){
       <div style="font-size:12px;color:#64748b;margin-bottom:2px;">${k.tipe||'-'} · Lt.${k.lantai||1}</div>
       <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:10px;">${fmtRp(k.harga)}<span style="font-size:10px;font-weight:400;color:#94a3b8;">/bln</span></div>
       <div style="font-size:10.5px;color:#94a3b8;margin-bottom:14px;line-height:1.5;">${k.fasilitas||'-'}</div>
-      <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;" onclick="S.selKamar=S.kamars.find(x=>x.id==='${k.id}');S.modal.updateKamar=true;render();">${ic.edit} Edit</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center;" onclick="S.selKamar=S.kamars.find(x=>x.id==='${k.id}');S.modal.updateKamar=true;render();">${ic.edit} Edit</button>
+        <button class="btn btn-danger btn-sm" style="padding:6px 10px;" onclick="doHapusKamar('${k.id}', '${k.status}')">${ic.trash}</button>
+      </div>
     </div>`).join('')||'<p style="color:#94a3b8;">Belum ada kamar.</p>';
   return `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -804,9 +847,15 @@ function pgPenyewa(){
       <td style="text-align:center;">
         ${p.foto_ktp?`<span onclick="window.open('${p.foto_ktp}','_blank')" style="cursor:pointer;color:#16a34a;">✅</span>`:`<span style="color:#d1d5db;">⬜</span>`}
       </td>
-      <td><button class="btn btn-outline btn-sm" onclick="S.selPenyewa=S.penyewas.find(x=>x.id==='${p.id}');S.modal.editPenyewa=true;render();">${ic.edit}</button></td>
+      <td>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="S.selPenyewa=S.penyewas.find(x=>x.id==='${p.id}');S.modal.editPenyewa=true;render();">${ic.edit}</button>
+          <button class="btn btn-danger btn-sm" onclick="doHapusPenyewa('${p.id}', '${p.id_kamar}')">${ic.trash}</button>
+        </div>
+      </td>
     </tr>`;
   }).join('')||`<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:24px;">Belum ada penyewa.</td></tr>`;
+  
   return `
   <div class="section-title">Data Penyewa</div>
   <div class="section-sub">Daftar seluruh penyewa terdaftar di sistem.</div>
@@ -944,6 +993,8 @@ function pgLaporan(){
     </tr>`;
   }).join('');
   const tE=tOp+tMn, tLR=tP-tE;
+  
+  // INI ADALAH BAGIAN TOMBOL HAPUS UNTUK LAPORAN
   const penRows=S.pengeluarans.map(e=>`
     <tr>
       <td><span class="cat-pill ${e.kategori==='operasional'?'cat-operasional':'cat-pemeliharaan'}">${e.kategori}</span></td>
@@ -951,7 +1002,8 @@ function pgLaporan(){
       <td style="color:#ef4444;font-weight:600;">${fmtRp(e.jumlah)}</td>
       <td>${fmtTgl(e.tgl)}</td>
       <td style="color:#64748b;">${e.keterangan}</td>
-    </tr>`).join('')||`<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;">Belum ada pengeluaran.</td></tr>`;
+      <td><button class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="doHapusPengeluaran('${e.id}')">${ic.trash}</button></td>
+    </tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">Belum ada pengeluaran.</td></tr>`;
 
   return `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -972,7 +1024,14 @@ function pgLaporan(){
   </div>
   <div class="panel">
     <div class="panel-header"><p style="font-size:14px;font-weight:700;color:#0f172a;margin:0;">Detail Pengeluaran</p></div>
-    <div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Kategori</th><th>Jenis</th><th>Jumlah</th><th>Tanggal</th><th>Keterangan</th></tr></thead><tbody>${penRows}</tbody></table></div>
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead>
+          <tr><th>Kategori</th><th>Jenis</th><th>Jumlah</th><th>Tanggal</th><th>Keterangan</th><th>Aksi</th></tr>
+        </thead>
+        <tbody>${penRows}</tbody>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -1165,8 +1224,9 @@ function pgAset(){
       <td><span class="badge badge-gray">${a.metode_penyusutan}</span></td>
       <td style="color:#ef4444;font-weight:600;">${fmtRp(penyusutan)}<span style="font-size:10px;font-weight:normal;color:#94a3b8;">/bln</span></td>
       <td><span class="badge ${a.status==='Aktif'?'badge-green':'badge-red'}">${a.status}</span></td>
+      <td><button class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="doHapusAset('${a.id}')">${ic.trash}</button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">Belum ada data aset.</td></tr>`;
+  }).join('') || `<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px;">Belum ada data aset.</td></tr>`;
 
   return `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -1179,7 +1239,7 @@ function pgAset(){
     <div style="overflow-x:auto;">
       <table class="tbl">
         <thead>
-          <tr><th>Nama Aset</th><th>Harga Beli</th><th>Tgl Beli</th><th>Umur Eko.</th><th>Metode</th><th>Penyusutan (Beban)</th><th>Status</th></tr>
+          <tr><th>Nama Aset</th><th>Harga Beli</th><th>Tgl Beli</th><th>Umur Eko.</th><th>Metode</th><th>Penyusutan (Beban)</th><th>Status</th><th>Aksi</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -1192,7 +1252,8 @@ function pgAset(){
 // ============================================================
 function pgArsip(){
   const items = S.arsip.map(a => `
-    <div class="arsip-card">
+    <div class="arsip-card" style="position:relative;">
+      <button onclick="doHapusArsip('${a.id}')" style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.9);border:none;border-radius:6px;padding:6px;cursor:pointer;color:#ef4444;box-shadow:0 2px 4px rgba(0,0,0,0.1);z-index:10;">${ic.trash}</button>
       <img src="${a.url_foto}" class="arsip-img" onclick="window.open('${a.url_foto}','_blank')" onerror="this.src='https://placehold.co/400x400/f1f5f9/94a3b8?text=No+Image'"/>
       <div style="padding:12px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:4px;">${a.judul}</div>
@@ -1538,6 +1599,9 @@ window.doSelesaiKerusakan=doSelesaiKerusakan;
 window.doTambahAset=doTambahAset; window.doUploadArsip=doUploadArsip;
 window.setRating=setRating; window.hoverRating=hoverRating; window.resetHover=resetHover;
 window.catSelect=catSelect; window.onFile=onFile; window.onKTP=onKTP; window.onFileArsip=onFileArsip;
+window.doHapusKamar=doHapusKamar; window.doHapusPenyewa=doHapusPenyewa;
+window.doHapusPengeluaran=doHapusPengeluaran; window.doHapusAset=doHapusAset;
+window.doHapusArsip=doHapusArsip;
 render();
 </script>
 </body>
